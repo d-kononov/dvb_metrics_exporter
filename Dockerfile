@@ -7,5 +7,5 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
 COPY --from=builder /go/src/github.com/d-kononov/dvb_metrics_exporter/app dvb_exporter
-CMD ./ping_exporter
+CMD ./dvb_exporter
 EXPOSE 9437

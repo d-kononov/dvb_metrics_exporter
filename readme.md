@@ -26,13 +26,13 @@ is running (and in which version).
 To run the exporter:
 
 ```console
-$ ./ping_exporter [options]
+$ ./dvb_exporter [options]
 ```
 
 Help on flags:
 
 ```console
-$ ./ping_exporter --help
+$ ./dvb_exporter --help
 ```
 
 Getting the results for testing via cURL:
@@ -43,12 +43,12 @@ $ curl http://localhost:9437/metrics
 
 ### Docker
 
-https://hub.docker.com/r/czerwonk/ping_exporter
+https://hub.docker.com/r/freeman1988/dvb_metrics_exporter
 
-To run the ping_exporter as a Docker container, run:
+To run the dvb_exporter as a Docker container, run:
 
 ```console
-$ docker run -p 9437:9437 -v /dev/dvb/:/dev/dvb/:ro --name dvb_exporter freeman1988/ping_exporter
+$ docker run -p 9437:9437 -v /dev/dvb/:/dev/dvb/:ro --name dvb_exporter freeman1988/dvb_metrics_exporter
 ```
 
 ## Contribute

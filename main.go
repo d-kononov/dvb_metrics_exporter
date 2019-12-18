@@ -45,7 +45,7 @@ func main() {
 		log.WithError(err).Fatalf("failed to read %s directory", devDvbPath)
 	}
 	if len(adapters) < 1 {
-		log.WithError(err).Fatalf("there are no adapters in %s directory", devDvbPath)
+		log.Fatalf("there are no adapters in %s directory", devDvbPath)
 	}
 
 	dvbMetricsCollector := &dvbCollector{adapters: adapters}
