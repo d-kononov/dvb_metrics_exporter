@@ -1,5 +1,5 @@
 [Unit]
-Description=Ping Exporter
+Description=DVB Exporter
 After=network.target
 
 [Service]
