@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"strings"
 )
 
 const (
@@ -16,7 +17,7 @@ const (
 	signalSnrMaxNumber = 65535
 )
 
-const version string = "v1"
+const version string = "v2"
 
 var (
 	showVersion     = kingpin.Flag("version", "Print version information").Default().Bool()
@@ -24,6 +25,8 @@ var (
 	metricsPath     = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics").Default("/metrics").String()
 	collectInterval = kingpin.Flag("collector.interval", "Interval of collecting metrics from adapters").Default("5s").String()
 	snrCorrection   = kingpin.Flag("collector.snr.correction", "Can be > 1, 65535 will be divided by this number to correct SNR value").Default("1").Int()
+	ignoreAdapters  = kingpin.Flag("collector.adapter.ignore", "Ignore adapters list, example: 7,8,9").Default("").String()
+	apiV5Force      = kingpin.Flag("collector.apiv5force", "Force API v5").Default("false").Bool()
 	debug           = kingpin.Flag("collector.debug", "Debug mode").Default("false").Bool()
 )
 
@@ -46,6 +49,21 @@ func main() {
 	}
 	if len(adapters) < 1 {
 		log.Fatalf("there are no adapters in %s directory", devDvbPath)
+	}
+	ignoreAdapterList := strings.Split(*ignoreAdapters, ",")
+	for _, ignoreAdapter := range ignoreAdapterList {
+		for index := 0; index < len(adapters); index++ {
+			adapter := adapters[index]
+			if adapter.Name() == fmt.Sprintf("adapter%s", ignoreAdapter) {
+				log.Debugf("excluding %s adapter from adapter list", adapter.Name())
+				// removing item from array (annotation)
+				adapters[index] = adapters[len(adapters)-1]
+				adapters = adapters[:len(adapters)-1]
+			}
+		}
+	}
+	if len(adapters) < 1 {
+		log.Fatal("there are no adapters in the list")
 	}
 
 	dvbMetricsCollector := &dvbCollector{adapters: adapters}

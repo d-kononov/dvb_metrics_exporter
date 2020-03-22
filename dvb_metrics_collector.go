@@ -78,70 +78,108 @@ func (c *dvbCollector) startCollectMetrics() {
 				defer wg.Done()
 				logger := log.WithFields(log.Fields{"adapter-num": adapterInfo.num, "adapter-path": adapterInfo.path})
 
-				apiV3 := frontend.API3{Device: *adapterInfo.device}
-				status, err := apiV3.Status()
-				if err != nil {
-					logger.WithError(err).Error("failed to get status")
-					adapterInfo.lock = false
-				} else {
-					adapterInfo.lock = strings.Contains(status.String(), "+lock")
-				}
-
-				if !adapterInfo.lock {
-					logger.Debug("no lock!")
-					return
-				}
-
-				deliverySystem, err := apiV3.DeliverySystem()
-				if err != nil {
-					logger.WithError(err).Error("failed to get DeliverySystem")
-				} else {
-					adapterInfo.mode = deliverySystem.String()
-				}
-
-				signalStrength, err := apiV3.SignalStrength()
-				if err != nil {
-					logger.WithError(err).Error("failed to get SignalStrength")
-				} else {
-					ss, _ := strconv.ParseUint(fmt.Sprintf("%x", uint16(signalStrength)), 16, 64)
-					if adapterInfo.mode == "DVB-T2" {
-						adapterInfo.signal = int(ss)
+				if *apiV5Force {
+					deliverySystem := "unknown"
+					mode, err := adapterInfo.device.DeliverySystem()
+					if err != nil {
+						log.WithError(err).Debugf("failed to parse delivery system")
 					} else {
-						adapterInfo.signal = int((ss * 100) / signalSnrMaxNumber)
-						if adapterInfo.signal > 97 {
-							if signalStrength < 1 {
-								adapterInfo.signal = int(signalStrength*-1) * *snrCorrection
+						deliverySystem = mode.String()
+					}
+					stat, errStat := adapterInfo.device.Stat()
+					if errStat == nil {
+						if len(stat.CNR) > 0 && len(stat.Signal) > 0 {
+							adapterInfo.snr = int(stat.CNR[0].Relative()) * *snrCorrection
+							adapterInfo.signal = int(stat.Signal[0].Relative())
+							adapterInfo.mode = deliverySystem
+
+							if len(stat.PreErrBit) > 0 {
+								adapterInfo.ber = int(stat.PreErrBit[0].Counter())
+							}
+
+							if adapterInfo.snr == 0 {
+								adapterInfo.lock = false
 							} else {
-								adapterInfo.signal = int(signalStrength) * *snrCorrection
+								adapterInfo.lock = true
+							}
+						}
+					}
+				} else {
+					apiV3 := frontend.API3{Device: *adapterInfo.device}
+					status, err := apiV3.Status()
+					if err != nil {
+						logger.WithError(err).Error("failed to get status")
+						adapterInfo.lock = false
+					} else {
+						adapterInfo.lock = strings.Contains(status.String(), "+lock")
+					}
+
+					adapterInfo.device.Stat()
+					if !adapterInfo.lock {
+						logger.Debug("no lock!")
+						return
+					}
+
+					deliverySystem, err := apiV3.DeliverySystem()
+					if err != nil {
+						logger.WithError(err).Error("failed to get DeliverySystem")
+					} else {
+						adapterInfo.mode = deliverySystem.String()
+					}
+
+					signalStrength, err := apiV3.SignalStrength()
+					if err != nil {
+						logger.WithError(err).Error("failed to get SignalStrength")
+					} else {
+						ss, _ := strconv.ParseUint(fmt.Sprintf("%x", uint16(signalStrength)), 16, 64)
+						if adapterInfo.mode == "DVB-T2" {
+							adapterInfo.signal = int(ss)
+						} else {
+							adapterInfo.signal = int((ss * 100) / signalSnrMaxNumber)
+							if adapterInfo.signal > 97 {
+								if signalStrength < 1 {
+									adapterInfo.signal = int(signalStrength*-1) * *snrCorrection
+								} else {
+									adapterInfo.signal = int(signalStrength) * *snrCorrection
+								}
+							}
+						}
+					}
+
+					snr, err := apiV3.SNR()
+					if err != nil {
+						logger.WithError(err).Error("failed to get SNR")
+					} else {
+						adapterInfo.snr = (int(snr) * 100) / snrMaxNumber
+					}
+
+					ber, err := apiV3.BER()
+					if err != nil {
+						logger.WithError(err).Error("failed to get BER")
+					} else {
+						adapterInfo.ber = int(ber)
+					}
+
+					// USE API V5 as a backup plan
+					mode, _ := adapterInfo.device.DeliverySystem()
+					if adapterInfo.snr == 0 { //|| adapterInfo.mode == "DVB-T2" {
+						stat, err := adapterInfo.device.Stat()
+						if err == nil {
+							if len(stat.CNR) > 0 {
+								adapterInfo.snr = int(stat.CNR[0].Relative()) * *snrCorrection
+								adapterInfo.signal = int(stat.Signal[0].Relative())
+								adapterInfo.mode = mode.String()
+								log.Info(stat.ErrBlk)
+								log.Info(stat.PostErrBit)
+								log.Info(stat.PreErrBit)
+								log.Info(stat.TotBlk)
 							}
 						}
 					}
 				}
 
-				snr, err := apiV3.SNR()
-				if err != nil {
-					logger.WithError(err).Error("failed to get SNR")
-				} else {
-					adapterInfo.snr = (int(snr) * 100) / snrMaxNumber
-				}
-
-				ber, err := apiV3.BER()
-				if err != nil {
-					logger.WithError(err).Error("failed to get BER")
-				} else {
-					adapterInfo.ber = int(ber)
-				}
-
-				// USE API V5
-				if adapterInfo.snr == 0 || adapterInfo.mode == "DVB-T2" {
-					stat, err := adapterInfo.device.Stat()
-					if err == nil {
-						if len(stat.CNR) > 0 {
-							adapterInfo.snr = int(stat.CNR[0].Relative()) * *snrCorrection
-						}
-					}
-				}
-				logger.Debugf("collected, signal: %d, snr: %d, ber: %d, mode: %s", adapterInfo.signal, adapterInfo.snr, adapterInfo.ber, adapterInfo.mode)
+				logger.Debugf("collected, lock: %t signal: %d, snr: %d, ber: %d, mode: %s",
+					adapterInfo.lock, adapterInfo.signal, adapterInfo.snr, adapterInfo.ber, adapterInfo.mode)
 			}()
 		}
 		wg.Wait()
