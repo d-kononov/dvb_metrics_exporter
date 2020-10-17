@@ -75,8 +75,14 @@ func main() {
 func startServer(dvbCollector *dvbCollector) {
 	log.Infof("Starting DVB metrics exporter (Version: %s)", version)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("DVB metrics exporter"))
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`<html>
+			<head><title>DVB metrics exporter</title></head>
+			<body>
+			<h1>DVB metrics exporter</h1>
+			<p><a href="` + *metricsPath + `">Metrics</a></p>
+			</body>
+			</html>`))
 	})
 
 	reg := prometheus.NewRegistry()
