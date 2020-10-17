@@ -1,11 +1,19 @@
-FROM golang as builder
-RUN go get -d -v github.com/d-kononov/dvb_metrics_exporter
+FROM golang:1.15.3 as builder
+
 WORKDIR /go/src/github.com/d-kononov/dvb_metrics_exporter
+
+# copy go.mod and download dependencies
+COPY go.mod go.sum ./
+RUN go mod download
+
+# copy all go files
+COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o app .
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /app
-COPY --from=builder /go/src/github.com/d-kononov/dvb_metrics_exporter/app dvb_exporter
-CMD ./dvb_exporter
+FROM alpine:3.12
+
+COPY --from=builder /go/src/github.com/d-kononov/dvb_metrics_exporter/app /usr/local/bin/dvb-metrics-exporter
+
+CMD dvb-metrics-exporter
+
 EXPOSE 9437
