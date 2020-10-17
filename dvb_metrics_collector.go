@@ -4,6 +4,7 @@ import (
 	"fmt"
 	log "github.com/sirupsen/logrus"
 	"github.com/ziutek/dvb/linuxdvb/frontend"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,21 +13,27 @@ import (
 	"time"
 )
 
+const (
+	adapterPrefix  = "adapter"
+	frontendPrefix = "frontend"
+)
+
 type dvbCollector struct {
 	adapters     []os.FileInfo
-	adapterInfos map[int]*adapterInfo
+	adapterInfos []*frontendInfo
 }
 
-type adapterInfo struct {
-	ber    int
-	device *frontend.Device
-	info   string
-	lock   bool
-	mode   string
-	num    int
-	path   string
-	signal int
-	snr    int
+type frontendInfo struct {
+	ber         int
+	device      *frontend.Device
+	info        string
+	lock        bool
+	mode        string
+	adapterNum  string
+	frontendNum string
+	path        string
+	signal      int
+	snr         int
 }
 
 func (c *dvbCollector) startCollectMetrics() {
@@ -40,10 +47,6 @@ func (c *dvbCollector) startCollectMetrics() {
 		snrMaxNumber = signalSnrMaxNumber / *snrCorrection
 	}
 
-	if c.adapterInfos == nil {
-		c.adapterInfos = map[int]*adapterInfo{}
-	}
-
 	defer func() {
 		for _, adapterInfo := range c.adapterInfos {
 			_ = adapterInfo.device.Close()
@@ -51,20 +54,42 @@ func (c *dvbCollector) startCollectMetrics() {
 	}()
 
 	for _, f := range c.adapters {
-		adapterPath := filepath.Join(devDvbPath, f.Name(), "frontend0")
-		log.Debugf("adding adapter %s", adapterPath)
-		adapterNum, err := strconv.Atoi(f.Name()[len(f.Name())-1:])
+		adapterPath := filepath.Join(devDvbPath, f.Name())
+		adapterNum := f.Name()[len(adapterPrefix):]
+
+		frontends, err := ioutil.ReadDir(adapterPath)
 		if err != nil {
-			log.WithError(err).Errorf("failed to get adapter number of adapter %s", adapterPath)
+			log.WithError(err).Errorf("failed to list frontends of adapter %s", adapterPath)
 			continue
 		}
-		if _, ok := c.adapterInfos[adapterNum]; !ok {
-			fe, err := frontend.OpenRO(adapterPath)
-			if err != nil {
-				log.WithError(err).Errorf("failed to open %s adapter", adapterPath)
+
+		for _, frontendFile := range frontends {
+			if !strings.HasPrefix(frontendFile.Name(), frontendPrefix) {
 				continue
 			}
-			c.adapterInfos[adapterNum] = &adapterInfo{device: &fe, num: adapterNum, path: adapterPath}
+
+			frontendPath := filepath.Join(adapterPath, frontendFile.Name())
+			frontendNum := frontendFile.Name()[len(frontendPrefix):]
+			log.Debugf("adding frontend %s", frontendPath)
+			if err != nil {
+				log.WithError(err).Errorf("failed to get adapter number of frontend %s", frontendPath)
+				continue
+			}
+			fe, err := frontend.OpenRO(frontendPath)
+			if err != nil {
+				log.WithError(err).Errorf("failed to open %s frontend", frontendPath)
+				continue
+			}
+
+			c.adapterInfos = append(
+				c.adapterInfos,
+				&frontendInfo{
+					device:      &fe,
+					adapterNum:  adapterNum,
+					frontendNum: frontendNum,
+					path:        frontendPath,
+				},
+			)
 		}
 	}
 
@@ -76,7 +101,7 @@ func (c *dvbCollector) startCollectMetrics() {
 			adapterInfo := c.adapterInfos[i]
 			go func() {
 				defer wg.Done()
-				logger := log.WithFields(log.Fields{"adapter-num": adapterInfo.num, "adapter-path": adapterInfo.path})
+				logger := log.WithFields(log.Fields{"adapter-num": adapterInfo.adapterNum, "adapter-path": adapterInfo.path})
 
 				if *apiV5Force {
 					deliverySystem := "unknown"

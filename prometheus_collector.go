@@ -1,15 +1,15 @@
 package main
 
 import (
-	"github.com/prometheus/client_golang/prometheus"
-	"strconv"
 	"sync"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const prefix = "dvb_"
 
 var (
-	labelNames  = []string{"adapter"}
+	labelNames  = []string{"adapter", "frontend"}
 	signal      = prometheus.NewDesc(prefix+"signal", "Signal", labelNames, nil)
 	snr         = prometheus.NewDesc(prefix+"snr", "SNR", labelNames, nil)
 	ber         = prometheus.NewDesc(prefix+"ber", "BER", labelNames, nil)
@@ -37,7 +37,7 @@ func (c *dvbCollector) Collect(ch chan<- prometheus.Metric) {
 		if item.lock {
 			lockVal = 1
 		}
-		l := []string{strconv.Itoa(item.num)}
+		l := []string{item.adapterNum, item.frontendNum}
 		ch <- prometheus.MustNewConstMetric(signal, prometheus.GaugeValue, float64(item.signal), l...)
 		ch <- prometheus.MustNewConstMetric(snr, prometheus.GaugeValue, float64(item.snr), l...)
 		ch <- prometheus.MustNewConstMetric(ber, prometheus.GaugeValue, float64(item.ber), l...)
